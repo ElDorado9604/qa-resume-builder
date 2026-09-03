@@ -1,51 +1,66 @@
 # QA Resume Builder
 
-A minimal, stateless web app for QA Engineers, Automation Engineers, SDETs, and Test Engineers to build ATS-optimized resumes and export them as Word (.docx) files.
-
-No login, no database — fill in the form and download your resume.
+A minimal, production-ready web app for QA Engineers, Automation Engineers, SDETs, and Test Engineers to build ATS-optimized resumes and export them as Word (.docx) files.
 
 ## Tech Stack
 
 - **Frontend**: Next.js 15 (App Router) + TypeScript + Tailwind CSS, deployed on Vercel
 - **Backend**: Python FastAPI + `python-docx`, deployed on Render
+- **Database + Auth**: Supabase (Postgres + Auth with Google OAuth only + Row Level Security)
 
 ## Project Structure
 
 ```
 qa-resume-builder/
 ├── frontend/           # Next.js app
-│   ├── src/app/         # App Router pages (single-page resume form)
-│   ├── src/components/  # React components (form fields, ResumeForm)
+│   ├── src/app/         # App Router pages (home, dashboard, resume editor, auth callback)
+│   ├── src/components/  # React components
+│   ├── src/lib/         # Supabase client helpers
 │   └── src/types/       # Shared TypeScript types
 ├── backend/             # FastAPI app
 │   ├── main.py           # API entrypoint
 │   ├── models.py         # Pydantic models
 │   └── docx_export.py    # .docx generation logic
-└── render.yaml          # Render deployment blueprint
+├── supabase/
+│   └── schema.sql        # Table schema + RLS policies
+└── render.yaml           # Render deployment blueprint
 ```
-
-## How it works
-
-1. User fills out the resume form in the browser (name, contact, summary, skills, experience, projects, education, certifications). Data lives only in the browser session — nothing is saved server-side.
-2. Clicking **Download Word** sends the form data as JSON to the backend's `POST /api/export-docx` endpoint.
-3. The backend generates a clean, ATS-friendly `.docx` using `python-docx` and streams it back as a download.
 
 ## Setup
 
-### Backend (Render)
+### 1. Supabase
+
+Connected project: `gxgnujmlymzrvamxqxxx` (region ap-northeast-1). Schema already applied.
+
+1. In **Authentication → Providers**, enable **Google** and disable email/password sign-up.
+2. Grab the **Project URL** and **anon/publishable key** from Project Settings → API (already in `frontend/.env.local.example`).
+3. Grab the **service_role key** from the same page for the backend (kept out of git — set directly in Render).
+
+### 2. Google Cloud Console (OAuth)
+
+1. Create an OAuth 2.0 Client ID (Web application) in [Google Cloud Console](https://console.cloud.google.com/apis/credentials).
+2. Authorized JavaScript origins: your Vercel domain (and `http://localhost:3000` for dev).
+3. Authorized redirect URI: `https://gxgnujmlymzrvamxqxxx.supabase.co/auth/v1/callback`.
+4. Paste the Client ID and Secret into Supabase → Authentication → Providers → Google.
+
+### 3. Backend (Render)
 
 1. Create a new **Web Service** on [Render](https://render.com), pointing at this repo, root directory `backend`. Or use the included `render.yaml` blueprint.
 2. Build command: `pip install -r requirements.txt`
 3. Start command: `uvicorn main:app --host 0.0.0.0 --port $PORT`
 4. Set environment variables (see `backend/.env.example`):
-   - `CORS_ORIGIN` — your Vercel frontend URL
+   - `SUPABASE_URL`
+   - `SUPABASE_SERVICE_ROLE_KEY`
    - `SARVAM_API_KEY` (optional, for future AI features)
+   - `CORS_ORIGIN` (your Vercel frontend URL)
 
-### Frontend (Vercel)
+### 4. Frontend (Vercel)
 
 1. Import this repo into [Vercel](https://vercel.com), root directory `frontend`.
-2. Set environment variable (see `frontend/.env.example`):
-   - `NEXT_PUBLIC_API_URL` — your Render backend URL
+2. Set environment variables (see `frontend/.env.local.example` for real project values):
+   - `NEXT_PUBLIC_SUPABASE_URL`
+   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+   - `NEXT_PUBLIC_API_URL` (your Render backend URL)
 3. Deploy.
 
 ## Local Development
@@ -62,13 +77,12 @@ uvicorn main:app --reload
 ```bash
 cd frontend
 npm install
-cp .env.example .env.local  # fill in values
+cp .env.local.example .env.local
 npm run dev
 ```
 
 ## Future Extensibility
 
-- Add back auth + database (e.g. Supabase, or another Postgres provider) to support saving/editing resumes across sessions.
 - AI-powered features via Sarvam AI (resume parsing, bullet generation, JD tailoring) — stub endpoints noted in `backend/main.py`.
 - PDF export.
 - Expo (React Native) mobile app reusing the same backend API and shared types.
