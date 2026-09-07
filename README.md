@@ -83,7 +83,7 @@ npm run dev
 
 ## AI Features (Sarvam AI)
 
-Three endpoints use [Sarvam AI](https://docs.sarvam.ai)'s chat completions API (`sarvam-30b` model) to help write resume content:
+Three endpoints use [Sarvam AI](https://docs.sarvam.ai)'s stable chat completions API (`POST /v1/chat/completions`, model `sarvam-105b`) to help write resume content:
 
 - `POST /api/generate-summary` — generates a professional summary from target role, skills, and experience.
 - `POST /api/generate-bullets` — turns rough notes about a role into polished, ATS-friendly bullet points.
