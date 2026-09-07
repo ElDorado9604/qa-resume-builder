@@ -51,7 +51,7 @@ Connected project: `gxgnujmlymzrvamxqxxx` (region ap-northeast-1). Schema alread
 4. Set environment variables (see `backend/.env.example`):
    - `SUPABASE_URL`
    - `SUPABASE_SERVICE_ROLE_KEY`
-   - `SARVAM_API_KEY` (optional, for future AI features)
+   - `SARVAM_API_KEY` (required for AI features — see below)
    - `CORS_ORIGIN` (your Vercel frontend URL)
 
 ### 4. Frontend (Vercel)
@@ -81,8 +81,19 @@ cp .env.local.example .env.local
 npm run dev
 ```
 
+## AI Features (Sarvam AI)
+
+Three endpoints use [Sarvam AI](https://docs.sarvam.ai)'s chat completions API (`sarvam-30b` model) to help write resume content:
+
+- `POST /api/generate-summary` — generates a professional summary from target role, skills, and experience.
+- `POST /api/generate-bullets` — turns rough notes about a role into polished, ATS-friendly bullet points.
+- `POST /api/tailor-to-jd` — compares the resume against a pasted job description and returns a match score, matched/missing keywords, a tailored summary, and suggestions.
+
+These are surfaced in the resume editor UI as "✨ AI Generate" (summary), "✨ AI Polish into bullets" (per experience entry), and "✨ Tailor to JD" (top of editor). All three require `SARVAM_API_KEY` to be set on the backend; if it's missing, the endpoints return a clear 502 error rather than crashing.
+
+Get a key at [dashboard.sarvam.ai](https://dashboard.sarvam.ai).
+
 ## Future Extensibility
 
-- AI-powered features via Sarvam AI (resume parsing, bullet generation, JD tailoring) — stub endpoints noted in `backend/main.py`.
 - PDF export.
 - Expo (React Native) mobile app reusing the same backend API and shared types.

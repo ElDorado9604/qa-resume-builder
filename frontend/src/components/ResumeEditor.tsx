@@ -57,6 +57,20 @@ export default function ResumeEditor({
   const [exporting, setExporting] = useState(false);
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [generatingSummary, setGeneratingSummary] = useState(false);
+  const [generatingBulletsFor, setGeneratingBulletsFor] = useState<number | null>(
+    null
+  );
+  const [jobDescription, setJobDescription] = useState("");
+  const [tailoring, setTailoring] = useState(false);
+  const [tailorResult, setTailorResult] = useState<{
+    match_score: number;
+    matched_keywords: string[];
+    missing_keywords: string[];
+    tailored_summary: string;
+    suggestions: string[];
+  } | null>(null);
+  const [showTailorPanel, setShowTailorPanel] = useState(false);
 
   const update = <K extends keyof ResumeData>(key: K, value: ResumeData[K]) =>
     setData((prev) => ({ ...prev, [key]: value }));
@@ -97,11 +111,109 @@ export default function ResumeEditor({
     }
   };
 
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL;
+
+  const handleGenerateSummary = async () => {
+    setGeneratingSummary(true);
+    setError(null);
+    try {
+      const res = await fetch(`${apiUrl}/api/generate-summary`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          target_role: data.target_role,
+          skills: data.skills,
+          experience: data.experience,
+        }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.detail || "Failed to generate summary");
+      }
+      const result = await res.json();
+      update("summary", result.summary);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to generate summary");
+    } finally {
+      setGeneratingSummary(false);
+    }
+  };
+
+  const handleGenerateBullets = async (index: number) => {
+    const exp = data.experience[index];
+    if (!exp.responsibilities?.trim()) {
+      setError("Add some rough notes in Responsibilities first.");
+      return;
+    }
+    setGeneratingBulletsFor(index);
+    setError(null);
+    try {
+      const res = await fetch(`${apiUrl}/api/generate-bullets`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          company: exp.company,
+          title: exp.title,
+          tech_stack: exp.tech_stack,
+          raw_notes: exp.responsibilities,
+          num_bullets: 4,
+        }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.detail || "Failed to generate bullets");
+      }
+      const result = await res.json();
+      const next = [...data.experience];
+      next[index] = {
+        ...exp,
+        responsibilities: (result.bullets as string[]).join("\n"),
+      };
+      update("experience", next);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to generate bullets");
+    } finally {
+      setGeneratingBulletsFor(null);
+    }
+  };
+
+  const handleTailorToJD = async () => {
+    if (!jobDescription.trim()) {
+      setError("Paste a job description first.");
+      return;
+    }
+    setTailoring(true);
+    setError(null);
+    setTailorResult(null);
+    try {
+      const res = await fetch(`${apiUrl}/api/tailor-to-jd`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          resume: data,
+          job_description: jobDescription,
+        }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.detail || "Failed to analyze job description");
+      }
+      const result = await res.json();
+      setTailorResult(result);
+    } catch (e) {
+      setError(
+        e instanceof Error ? e.message : "Failed to analyze job description"
+      );
+    } finally {
+      setTailoring(false);
+    }
+  };
+
+
   const handleExport = async () => {
     setExporting(true);
     setError(null);
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL;
       const res = await fetch(`${apiUrl}/api/export-docx`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -148,12 +260,107 @@ export default function ResumeEditor({
           >
             {exporting ? "Exporting…" : "Download Word"}
           </button>
+          <button
+            onClick={() => setShowTailorPanel((v) => !v)}
+            className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+          >
+            ✨ Tailor to JD
+          </button>
         </div>
       </div>
 
       {error && (
         <div className="mb-4 rounded-md bg-red-50 px-4 py-2 text-sm text-red-700">
           {error}
+        </div>
+      )}
+
+      {showTailorPanel && (
+        <div className="mb-8 rounded-lg border border-brand-200 bg-brand-50 p-6">
+          <h2 className="mb-3 font-semibold text-gray-900">
+            Tailor to a Job Description
+          </h2>
+          <TextArea
+            label="Paste the job description"
+            value={jobDescription}
+            onChange={setJobDescription}
+            rows={5}
+            placeholder="Paste the full job posting here..."
+          />
+          <button
+            type="button"
+            onClick={handleTailorToJD}
+            disabled={tailoring}
+            className="mt-3 rounded-lg bg-brand-500 px-4 py-2 text-sm font-medium text-white hover:bg-brand-600 disabled:opacity-60"
+          >
+            {tailoring ? "Analyzing…" : "Analyze fit"}
+          </button>
+
+          {tailorResult && (
+            <div className="mt-5 space-y-4 rounded-md border border-gray-200 bg-white p-4">
+              <div>
+                <span className="text-sm font-semibold text-gray-900">
+                  Match score:{" "}
+                </span>
+                <span className="text-sm text-brand-600">
+                  {tailorResult.match_score}/100
+                </span>
+              </div>
+
+              {tailorResult.matched_keywords.length > 0 && (
+                <div>
+                  <p className="mb-1 text-sm font-semibold text-gray-900">
+                    Matched keywords
+                  </p>
+                  <p className="text-sm text-gray-600">
+                    {tailorResult.matched_keywords.join(", ")}
+                  </p>
+                </div>
+              )}
+
+              {tailorResult.missing_keywords.length > 0 && (
+                <div>
+                  <p className="mb-1 text-sm font-semibold text-gray-900">
+                    Missing keywords
+                  </p>
+                  <p className="text-sm text-gray-600">
+                    {tailorResult.missing_keywords.join(", ")}
+                  </p>
+                </div>
+              )}
+
+              <div>
+                <div className="mb-1 flex items-center justify-between">
+                  <p className="text-sm font-semibold text-gray-900">
+                    Tailored summary suggestion
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => update("summary", tailorResult.tailored_summary)}
+                    className="text-xs font-medium text-brand-600 hover:text-brand-700"
+                  >
+                    Use this summary
+                  </button>
+                </div>
+                <p className="text-sm text-gray-600">
+                  {tailorResult.tailored_summary}
+                </p>
+              </div>
+
+              {tailorResult.suggestions.length > 0 && (
+                <div>
+                  <p className="mb-1 text-sm font-semibold text-gray-900">
+                    Suggestions
+                  </p>
+                  <ul className="list-inside list-disc text-sm text-gray-600">
+                    {tailorResult.suggestions.map((s, idx) => (
+                      <li key={idx}>{s}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 
@@ -209,7 +416,17 @@ export default function ResumeEditor({
 
         {/* Summary */}
         <section className="rounded-lg border border-gray-200 bg-white p-6">
-          <h2 className="mb-4 font-semibold text-gray-900">Professional Summary</h2>
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="font-semibold text-gray-900">Professional Summary</h2>
+            <button
+              type="button"
+              onClick={handleGenerateSummary}
+              disabled={generatingSummary}
+              className="text-sm font-medium text-brand-600 hover:text-brand-700 disabled:opacity-60"
+            >
+              {generatingSummary ? "Generating…" : "✨ AI Generate"}
+            </button>
+          </div>
           <TextArea
             label="Summary"
             value={data.summary ?? ""}
@@ -331,18 +548,30 @@ export default function ResumeEditor({
                   }}
                   rows={3}
                 />
-                <button
-                  type="button"
-                  onClick={() =>
-                    update(
-                      "experience",
-                      data.experience.filter((_, idx) => idx !== i)
-                    )
-                  }
-                  className="mt-3 text-xs font-medium text-red-500 hover:text-red-700"
-                >
-                  Remove entry
-                </button>
+                <div className="mt-2 flex items-center justify-between">
+                  <button
+                    type="button"
+                    onClick={() => handleGenerateBullets(i)}
+                    disabled={generatingBulletsFor === i}
+                    className="text-xs font-medium text-brand-600 hover:text-brand-700 disabled:opacity-60"
+                  >
+                    {generatingBulletsFor === i
+                      ? "Polishing…"
+                      : "✨ AI Polish into bullets"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      update(
+                        "experience",
+                        data.experience.filter((_, idx) => idx !== i)
+                      )
+                    }
+                    className="text-xs font-medium text-red-500 hover:text-red-700"
+                  >
+                    Remove entry
+                  </button>
+                </div>
               </div>
             ))}
           </div>

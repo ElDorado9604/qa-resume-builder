@@ -53,3 +53,53 @@ class ResumeExportRequest(BaseModel):
     projects: List[ProjectEntry] = Field(default_factory=list)
     education: List[EducationEntry] = Field(default_factory=list)
     certifications: List[str] = Field(default_factory=list)
+
+
+# --------------------------------------------------------------------------
+# Sarvam AI-powered endpoint models
+# --------------------------------------------------------------------------
+
+
+class GenerateSummaryRequest(BaseModel):
+    target_role: Optional[str] = None
+    years_of_experience: Optional[str] = None
+    skills: SkillGroups = Field(default_factory=SkillGroups)
+    experience: List[ExperienceEntry] = Field(default_factory=list)
+    tone: Optional[str] = Field(
+        default="confident and concise",
+        description="Desired tone for the generated summary.",
+    )
+
+
+class GenerateSummaryResponse(BaseModel):
+    summary: str
+
+
+class GenerateBulletsRequest(BaseModel):
+    company: Optional[str] = None
+    title: Optional[str] = None
+    tech_stack: List[str] = Field(default_factory=list)
+    raw_notes: str = Field(
+        description="Rough, unpolished notes about what the person did in this role."
+    )
+    num_bullets: int = Field(default=4, ge=1, le=8)
+
+
+class GenerateBulletsResponse(BaseModel):
+    bullets: List[str]
+
+
+class TailorToJDRequest(BaseModel):
+    resume: ResumeExportRequest
+    job_description: str
+
+
+class TailorToJDResponse(BaseModel):
+    match_score: int = Field(description="Rough estimate 0-100 of resume/JD keyword fit.")
+    matched_keywords: List[str] = Field(default_factory=list)
+    missing_keywords: List[str] = Field(default_factory=list)
+    tailored_summary: str
+    suggestions: List[str] = Field(
+        default_factory=list,
+        description="Actionable suggestions for tailoring the resume further.",
+    )
