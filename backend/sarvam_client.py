@@ -1,9 +1,12 @@
 """
 Thin wrapper around Sarvam AI's Chat Completions API.
 
-Docs: https://docs.sarvam.ai/api-reference/open-source/chat-completions
-Endpoint is OpenAI-compatible: POST https://api.sarvam.ai/v2/chat/completions
+Docs: https://docs.sarvam.ai/api-reference/chat/chat-completions
+Stable endpoint: POST https://api.sarvam.ai/v1/chat/completions
 Auth: api-subscription-key header.
+
+Note: /v2/chat/completions is beta and requires per-key whitelist;
+we use /v1 so any valid SARVAM_API_KEY works without beta access.
 """
 import os
 import json
@@ -11,8 +14,8 @@ from typing import Optional
 
 import httpx
 
-SARVAM_API_URL = "https://api.sarvam.ai/v2/chat/completions"
-SARVAM_MODEL = "sarvam-30b"
+SARVAM_API_URL = "https://api.sarvam.ai/v1/chat/completions"
+SARVAM_MODEL = "sarvam-105b"
 
 
 class SarvamError(RuntimeError):
@@ -39,8 +42,7 @@ def chat_completion(
 ) -> str:
     """
     Calls Sarvam's chat completions endpoint and returns the assistant's
-    text content. Reasoning ("thinking") mode is disabled for latency,
-    since resume-writing tasks don't need multi-step reasoning.
+    text content.
     """
     api_key = _get_api_key()
 
@@ -52,7 +54,6 @@ def chat_completion(
         ],
         "max_tokens": max_tokens,
         "temperature": temperature,
-        "reasoning_effort": None,
     }
     if json_mode:
         payload["response_format"] = {"type": "json_object"}
