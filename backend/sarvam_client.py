@@ -5,12 +5,18 @@ Docs: https://docs.sarvam.ai/api-reference/chat/chat-completions
 Stable endpoint: POST https://api.sarvam.ai/v1/chat/completions
 Auth: api-subscription-key header.
 
-Note: /v2/chat/completions is beta and requires per-key whitelist;
-we use /v1 so any valid SARVAM_API_KEY works without beta access.
+Notes:
+- /v2/chat/completions is beta and requires per-key whitelist; we use /v1
+  so any valid SARVAM_API_KEY works without needing beta access.
+- sarvam-105b has "thinking mode" ON by default (reasoning_effort=medium),
+  which puts its output in a separate reasoning_content field and can
+  leave the regular `content` field null if the reasoning consumes the
+  whole max_tokens budget. We explicitly disable reasoning
+  (reasoning_effort=None) since resume-writing tasks don't need multi-step
+  reasoning, and it keeps latency/cost down and `content` reliably populated.
 """
 import os
 import json
-from typing import Optional
 
 import httpx
 
@@ -42,7 +48,7 @@ def chat_completion(
 ) -> str:
     """
     Calls Sarvam's chat completions endpoint and returns the assistant's
-    text content.
+    text content. Reasoning ("thinking") mode is explicitly disabled.
     """
     api_key = _get_api_key()
 
@@ -54,6 +60,7 @@ def chat_completion(
         ],
         "max_tokens": max_tokens,
         "temperature": temperature,
+        "reasoning_effort": None,
     }
     if json_mode:
         payload["response_format"] = {"type": "json_object"}
@@ -76,9 +83,22 @@ def chat_completion(
 
     data = response.json()
     try:
-        return data["choices"][0]["message"]["content"]
+        message = data["choices"][0]["message"]
     except (KeyError, IndexError) as exc:
         raise SarvamError(f"Unexpected Sarvam API response shape: {data}") from exc
+
+    content = message.get("content")
+    if not content:
+        finish_reason = data["choices"][0].get("finish_reason")
+        reasoning = message.get("reasoning_content")
+        raise SarvamError(
+            "Sarvam returned an empty response "
+            f"(finish_reason={finish_reason!r}). "
+            f"This usually means max_tokens was too low or reasoning mode "
+            f"consumed the budget. reasoning_content present: {bool(reasoning)}"
+        )
+
+    return content
 
 
 def chat_completion_json(
