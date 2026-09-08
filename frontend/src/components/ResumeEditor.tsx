@@ -10,7 +10,19 @@ import type {
   ProjectEntry,
   EducationEntry,
   TargetRole,
+  SkillGroups,
 } from "@/types/resume";
+import {
+  Save,
+  Download,
+  Sparkles,
+  Plus,
+  Trash2,
+  Loader2,
+  CheckCircle2,
+  CircleDashed,
+  Check,
+} from "lucide-react";
 
 const TARGET_ROLES: TargetRole[] = [
   "QA Engineer",
@@ -40,6 +52,54 @@ const emptyEducation: EducationEntry = {
   institution: "",
   year: "",
 };
+
+// Heuristic keyword -> skill-category mapping, so a missing JD keyword
+// lands in the right bucket instead of a single junk-drawer list.
+const CATEGORY_HINTS: Record<keyof SkillGroups, string[]> = {
+  automation: [
+    "selenium", "playwright", "cypress", "testng", "junit", "pytest",
+    "cucumber", "pom", "page object", "appium", "webdriver", "robot framework",
+  ],
+  api: ["rest assured", "postman", "soapui", "contract testing", "graphql", "api"],
+  ci_cd: [
+    "jenkins", "github actions", "gitlab ci", "azure devops", "docker",
+    "kubernetes", "ci/cd", "circleci", "travis",
+  ],
+  languages: ["java", "python", "typescript", "javascript", "c#", "sql", "go", "ruby"],
+  tools: [],
+};
+
+function categorizeSkill(keyword: string): keyof SkillGroups {
+  const lower = keyword.toLowerCase();
+  for (const [category, hints] of Object.entries(CATEGORY_HINTS) as [
+    keyof SkillGroups,
+    string[],
+  ][]) {
+    if (hints.some((hint) => lower.includes(hint))) return category;
+  }
+  return "tools";
+}
+
+function skillExists(skills: SkillGroups, keyword: string): boolean {
+  const lower = keyword.toLowerCase();
+  return Object.values(skills).some((list) =>
+    list.some((s: string) => s.toLowerCase() === lower)
+  );
+}
+
+function SectionStatus({ complete }: { complete: boolean }) {
+  return complete ? (
+    <span className="flex items-center gap-1 font-mono text-xs text-pass">
+      <CheckCircle2 key="done" className="h-3.5 w-3.5 animate-check-in" />
+      complete
+    </span>
+  ) : (
+    <span className="flex items-center gap-1 font-mono text-xs text-ink-faint">
+      <CircleDashed className="h-3.5 w-3.5" />
+      empty
+    </span>
+  );
+}
 
 export default function ResumeEditor({
   resumeId,
@@ -71,9 +131,12 @@ export default function ResumeEditor({
     suggestions: string[];
   } | null>(null);
   const [showTailorPanel, setShowTailorPanel] = useState(false);
+  const [addedKeywords, setAddedKeywords] = useState<Set<string>>(new Set());
 
   const update = <K extends keyof ResumeData>(key: K, value: ResumeData[K]) =>
     setData((prev) => ({ ...prev, [key]: value }));
+
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL;
 
   const handleSave = async () => {
     setSaving(true);
@@ -111,7 +174,33 @@ export default function ResumeEditor({
     }
   };
 
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL;
+  const handleExport = async () => {
+    setExporting(true);
+    setError(null);
+    try {
+      const res = await fetch(`${apiUrl}/api/export-docx`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+
+      if (!res.ok) throw new Error("Export failed");
+
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${data.name.replace(/\s+/g, "_") || "Resume"}.docx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to export resume");
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const handleGenerateSummary = async () => {
     setGeneratingSummary(true);
@@ -209,76 +298,86 @@ export default function ResumeEditor({
     }
   };
 
-
-  const handleExport = async () => {
-    setExporting(true);
-    setError(null);
-    try {
-      const res = await fetch(`${apiUrl}/api/export-docx`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
-      });
-
-      if (!res.ok) throw new Error("Export failed");
-
-      const blob = await res.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `${data.name.replace(/\s+/g, "_") || "Resume"}.docx`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(url);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to export resume");
-    } finally {
-      setExporting(false);
+  const handleAddKeyword = (keyword: string) => {
+    if (skillExists(data.skills, keyword)) {
+      setAddedKeywords((prev) => new Set(prev).add(keyword));
+      return;
     }
+    const category = categorizeSkill(keyword);
+    update("skills", {
+      ...data.skills,
+      [category]: [...data.skills[category], keyword],
+    });
+    setAddedKeywords((prev) => new Set(prev).add(keyword));
   };
+
+  const handleAddAllKeywords = () => {
+    if (!tailorResult) return;
+    tailorResult.missing_keywords.forEach(handleAddKeyword);
+  };
+
+  const scoreColor = (score: number) =>
+    score >= 70 ? "bg-pass" : score >= 40 ? "bg-signal" : "bg-fail";
+
+  const skillsFilled = Object.values(data.skills).some((list) => list.length > 0);
 
   return (
     <div className="pb-24">
-      <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Edit Resume</h1>
-        <div className="flex items-center gap-3">
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+        <h1 className="font-display text-2xl font-semibold text-ink">
+          Edit resume
+        </h1>
+        <div className="flex flex-wrap items-center gap-2">
           {savedAt && (
-            <span className="text-xs text-gray-400">Saved at {savedAt}</span>
+            <span className="font-mono text-xs text-ink-faint">
+              saved {savedAt}
+            </span>
           )}
           <button
             onClick={handleSave}
             disabled={saving}
-            className="rounded-lg border border-brand-500 px-4 py-2 text-sm font-medium text-brand-600 hover:bg-brand-50 disabled:opacity-60"
+            className="flex items-center gap-1.5 rounded-md border border-line bg-panel px-3.5 py-2 text-sm font-medium text-ink transition-colors hover:border-pass disabled:opacity-60"
           >
-            {saving ? "Saving…" : "Save"}
+            {saving ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Save className="h-4 w-4" />
+            )}
+            Save
           </button>
           <button
             onClick={handleExport}
             disabled={exporting}
-            className="rounded-lg bg-brand-500 px-4 py-2 text-sm font-medium text-white hover:bg-brand-600 disabled:opacity-60"
+            className="flex items-center gap-1.5 rounded-md bg-pass px-3.5 py-2 text-sm font-medium text-white transition-colors hover:bg-pass-strong disabled:opacity-60"
           >
-            {exporting ? "Exporting…" : "Download Word"}
+            {exporting ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Download className="h-4 w-4" />
+            )}
+            Download Word
           </button>
           <button
             onClick={() => setShowTailorPanel((v) => !v)}
-            className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+            className="flex items-center gap-1.5 rounded-md border border-line bg-panel px-3.5 py-2 text-sm font-medium text-ink transition-colors hover:border-signal"
           >
-            ✨ Tailor to JD
+            <Sparkles className="h-4 w-4 text-signal" />
+            Tailor to JD
           </button>
         </div>
       </div>
 
       {error && (
-        <div className="mb-4 rounded-md bg-red-50 px-4 py-2 text-sm text-red-700">
+        <div className="mb-4 rounded-md border border-fail/30 bg-fail-soft px-4 py-2.5 text-sm text-fail">
           {error}
         </div>
       )}
 
       {showTailorPanel && (
-        <div className="mb-8 rounded-lg border border-brand-200 bg-brand-50 p-6">
-          <h2 className="mb-3 font-semibold text-gray-900">
-            Tailor to a Job Description
+        <div className="mb-8 rounded-lg border border-signal/30 bg-signal-soft p-6">
+          <h2 className="mb-3 flex items-center gap-2 font-display text-lg font-semibold text-ink">
+            <Sparkles className="h-4 w-4 text-signal" />
+            Tailor to a job description
           </h2>
           <TextArea
             label="Paste the job description"
@@ -291,68 +390,122 @@ export default function ResumeEditor({
             type="button"
             onClick={handleTailorToJD}
             disabled={tailoring}
-            className="mt-3 rounded-lg bg-brand-500 px-4 py-2 text-sm font-medium text-white hover:bg-brand-600 disabled:opacity-60"
+            className="mt-3 flex items-center gap-1.5 rounded-md bg-signal px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-signal-strong disabled:opacity-60"
           >
-            {tailoring ? "Analyzing…" : "Analyze fit"}
+            {tailoring ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Sparkles className="h-4 w-4" />
+            )}
+            Analyze fit
           </button>
 
           {tailorResult && (
-            <div className="mt-5 space-y-4 rounded-md border border-gray-200 bg-white p-4">
+            <div className="mt-5 space-y-5 rounded-md border border-line bg-panel p-5">
               <div>
-                <span className="text-sm font-semibold text-gray-900">
-                  Match score:{" "}
-                </span>
-                <span className="text-sm text-brand-600">
-                  {tailorResult.match_score}/100
-                </span>
+                <div className="mb-1.5 flex items-center justify-between">
+                  <span className="text-sm font-semibold text-ink">
+                    Match score
+                  </span>
+                  <span className="font-mono text-sm text-ink-soft">
+                    {tailorResult.match_score}/100
+                  </span>
+                </div>
+                <div className="h-1.5 w-full overflow-hidden rounded-full bg-line">
+                  <div
+                    className={`h-full rounded-full transition-all ${scoreColor(
+                      tailorResult.match_score
+                    )}`}
+                    style={{ width: `${tailorResult.match_score}%` }}
+                  />
+                </div>
               </div>
 
               {tailorResult.matched_keywords.length > 0 && (
                 <div>
-                  <p className="mb-1 text-sm font-semibold text-gray-900">
+                  <p className="mb-2 text-sm font-semibold text-ink">
                     Matched keywords
                   </p>
-                  <p className="text-sm text-gray-600">
-                    {tailorResult.matched_keywords.join(", ")}
-                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {tailorResult.matched_keywords.map((kw) => (
+                      <span
+                        key={kw}
+                        className="rounded border border-pass/30 bg-pass-soft px-2 py-1 font-mono text-xs text-pass-strong"
+                      >
+                        {kw}
+                      </span>
+                    ))}
+                  </div>
                 </div>
               )}
 
               {tailorResult.missing_keywords.length > 0 && (
                 <div>
-                  <p className="mb-1 text-sm font-semibold text-gray-900">
-                    Missing keywords
-                  </p>
-                  <p className="text-sm text-gray-600">
-                    {tailorResult.missing_keywords.join(", ")}
-                  </p>
+                  <div className="mb-2 flex items-center justify-between">
+                    <p className="text-sm font-semibold text-ink">
+                      Missing keywords
+                    </p>
+                    <button
+                      type="button"
+                      onClick={handleAddAllKeywords}
+                      className="text-xs font-medium text-signal hover:text-signal-strong"
+                    >
+                      Add all
+                    </button>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {tailorResult.missing_keywords.map((kw) => {
+                      const added =
+                        addedKeywords.has(kw) || skillExists(data.skills, kw);
+                      return (
+                        <button
+                          key={kw}
+                          type="button"
+                          onClick={() => handleAddKeyword(kw)}
+                          disabled={added}
+                          className={`flex items-center gap-1 rounded border px-2 py-1 font-mono text-xs transition-colors ${
+                            added
+                              ? "border-pass/30 bg-pass-soft text-pass-strong"
+                              : "border-signal/30 bg-signal-soft text-signal-strong hover:bg-signal/20"
+                          }`}
+                        >
+                          {added ? (
+                            <Check className="h-3 w-3" />
+                          ) : (
+                            <Plus className="h-3 w-3" />
+                          )}
+                          {kw}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
 
               <div>
-                <div className="mb-1 flex items-center justify-between">
-                  <p className="text-sm font-semibold text-gray-900">
+                <div className="mb-1.5 flex items-center justify-between">
+                  <p className="text-sm font-semibold text-ink">
                     Tailored summary suggestion
                   </p>
                   <button
                     type="button"
                     onClick={() => update("summary", tailorResult.tailored_summary)}
-                    className="text-xs font-medium text-brand-600 hover:text-brand-700"
+                    className="text-xs font-medium text-signal hover:text-signal-strong"
                   >
                     Use this summary
                   </button>
                 </div>
-                <p className="text-sm text-gray-600">
+                <p className="text-sm leading-relaxed text-ink-soft">
                   {tailorResult.tailored_summary}
                 </p>
               </div>
 
               {tailorResult.suggestions.length > 0 && (
                 <div>
-                  <p className="mb-1 text-sm font-semibold text-gray-900">
+                  <p className="mb-1.5 text-sm font-semibold text-ink">
                     Suggestions
                   </p>
-                  <ul className="list-inside list-disc text-sm text-gray-600">
+                  <ul className="list-inside list-disc space-y-1 text-sm text-ink-soft">
                     {tailorResult.suggestions.map((s, idx) => (
                       <li key={idx}>{s}</li>
                     ))}
@@ -364,20 +517,25 @@ export default function ResumeEditor({
         </div>
       )}
 
-      <div className="space-y-8">
+      <div className="space-y-6">
         {/* Basic info */}
-        <section className="rounded-lg border border-gray-200 bg-white p-6">
-          <h2 className="mb-4 font-semibold text-gray-900">Basic Info</h2>
+        <section className="rounded-lg border border-line bg-panel p-6">
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="font-display text-lg font-semibold text-ink">
+              Basic info
+            </h2>
+            <SectionStatus complete={!!data.name && !!data.contact.email} />
+          </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Full Name" value={data.name} onChange={(v) => update("name", v)} />
             <label className="block">
-              <span className="mb-1 block text-sm font-medium text-gray-700">
+              <span className="mb-1.5 block text-sm font-medium text-ink-soft">
                 Target Role
               </span>
               <select
                 value={data.target_role}
                 onChange={(e) => update("target_role", e.target.value)}
-                className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500"
+                className="w-full rounded-md border border-line bg-panel px-3 py-2 text-sm text-ink focus:border-pass focus:outline-none focus:ring-1 focus:ring-pass"
               >
                 {TARGET_ROLES.map((role) => (
                   <option key={role} value={role}>
@@ -415,17 +573,12 @@ export default function ResumeEditor({
         </section>
 
         {/* Summary */}
-        <section className="rounded-lg border border-gray-200 bg-white p-6">
+        <section className="rounded-lg border border-line bg-panel p-6">
           <div className="mb-4 flex items-center justify-between">
-            <h2 className="font-semibold text-gray-900">Professional Summary</h2>
-            <button
-              type="button"
-              onClick={handleGenerateSummary}
-              disabled={generatingSummary}
-              className="text-sm font-medium text-brand-600 hover:text-brand-700 disabled:opacity-60"
-            >
-              {generatingSummary ? "Generating…" : "✨ AI Generate"}
-            </button>
+            <h2 className="font-display text-lg font-semibold text-ink">
+              Professional summary
+            </h2>
+            <SectionStatus complete={!!data.summary?.trim()} />
           </div>
           <TextArea
             label="Summary"
@@ -433,11 +586,29 @@ export default function ResumeEditor({
             onChange={(v) => update("summary", v)}
             placeholder="2-3 sentence summary highlighting your QA/automation experience"
           />
+          <button
+            type="button"
+            onClick={handleGenerateSummary}
+            disabled={generatingSummary}
+            className="mt-2 flex items-center gap-1.5 text-sm font-medium text-signal hover:text-signal-strong disabled:opacity-60"
+          >
+            {generatingSummary ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Sparkles className="h-3.5 w-3.5" />
+            )}
+            AI generate
+          </button>
         </section>
 
         {/* Skills */}
-        <section className="rounded-lg border border-gray-200 bg-white p-6">
-          <h2 className="mb-4 font-semibold text-gray-900">Skills</h2>
+        <section className="rounded-lg border border-line bg-panel p-6">
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="font-display text-lg font-semibold text-ink">
+              Skills
+            </h2>
+            <SectionStatus complete={skillsFilled} />
+          </div>
           <div className="space-y-4">
             <TagInput
               label="Automation"
@@ -473,20 +644,26 @@ export default function ResumeEditor({
         </section>
 
         {/* Experience */}
-        <section className="rounded-lg border border-gray-200 bg-white p-6">
+        <section className="rounded-lg border border-line bg-panel p-6">
           <div className="mb-4 flex items-center justify-between">
-            <h2 className="font-semibold text-gray-900">Experience</h2>
+            <div className="flex items-center gap-3">
+              <h2 className="font-display text-lg font-semibold text-ink">
+                Experience
+              </h2>
+              <SectionStatus complete={data.experience.length > 0} />
+            </div>
             <button
               type="button"
               onClick={() => update("experience", [...data.experience, { ...emptyExperience }])}
-              className="text-sm font-medium text-brand-600 hover:text-brand-700"
+              className="flex items-center gap-1 text-sm font-medium text-pass hover:text-pass-strong"
             >
-              + Add entry
+              <Plus className="h-3.5 w-3.5" />
+              Add entry
             </button>
           </div>
           <div className="space-y-6">
             {data.experience.map((exp, i) => (
-              <div key={i} className="rounded-md border border-gray-100 p-4">
+              <div key={i} className="rounded-md border border-line p-4">
                 <div className="mb-3 grid gap-3 sm:grid-cols-2">
                   <Field
                     label="Company"
@@ -553,11 +730,14 @@ export default function ResumeEditor({
                     type="button"
                     onClick={() => handleGenerateBullets(i)}
                     disabled={generatingBulletsFor === i}
-                    className="text-xs font-medium text-brand-600 hover:text-brand-700 disabled:opacity-60"
+                    className="flex items-center gap-1.5 text-xs font-medium text-signal hover:text-signal-strong disabled:opacity-60"
                   >
-                    {generatingBulletsFor === i
-                      ? "Polishing…"
-                      : "✨ AI Polish into bullets"}
+                    {generatingBulletsFor === i ? (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    ) : (
+                      <Sparkles className="h-3 w-3" />
+                    )}
+                    AI polish into bullets
                   </button>
                   <button
                     type="button"
@@ -567,9 +747,10 @@ export default function ResumeEditor({
                         data.experience.filter((_, idx) => idx !== i)
                       )
                     }
-                    className="text-xs font-medium text-red-500 hover:text-red-700"
+                    className="flex items-center gap-1 text-xs font-medium text-fail hover:text-fail/80"
                   >
-                    Remove entry
+                    <Trash2 className="h-3 w-3" />
+                    Remove
                   </button>
                 </div>
               </div>
@@ -578,20 +759,23 @@ export default function ResumeEditor({
         </section>
 
         {/* Projects */}
-        <section className="rounded-lg border border-gray-200 bg-white p-6">
+        <section className="rounded-lg border border-line bg-panel p-6">
           <div className="mb-4 flex items-center justify-between">
-            <h2 className="font-semibold text-gray-900">Projects</h2>
+            <h2 className="font-display text-lg font-semibold text-ink">
+              Projects
+            </h2>
             <button
               type="button"
               onClick={() => update("projects", [...data.projects, { ...emptyProject }])}
-              className="text-sm font-medium text-brand-600 hover:text-brand-700"
+              className="flex items-center gap-1 text-sm font-medium text-pass hover:text-pass-strong"
             >
-              + Add project
+              <Plus className="h-3.5 w-3.5" />
+              Add project
             </button>
           </div>
           <div className="space-y-6">
             {data.projects.map((proj, i) => (
-              <div key={i} className="rounded-md border border-gray-100 p-4">
+              <div key={i} className="rounded-md border border-line p-4">
                 <div className="mb-3 grid gap-3 sm:grid-cols-2">
                   <Field
                     label="Name"
@@ -641,9 +825,10 @@ export default function ResumeEditor({
                       data.projects.filter((_, idx) => idx !== i)
                     )
                   }
-                  className="mt-3 text-xs font-medium text-red-500 hover:text-red-700"
+                  className="mt-3 flex items-center gap-1 text-xs font-medium text-fail hover:text-fail/80"
                 >
-                  Remove project
+                  <Trash2 className="h-3 w-3" />
+                  Remove
                 </button>
               </div>
             ))}
@@ -651,15 +836,21 @@ export default function ResumeEditor({
         </section>
 
         {/* Education */}
-        <section className="rounded-lg border border-gray-200 bg-white p-6">
+        <section className="rounded-lg border border-line bg-panel p-6">
           <div className="mb-4 flex items-center justify-between">
-            <h2 className="font-semibold text-gray-900">Education</h2>
+            <div className="flex items-center gap-3">
+              <h2 className="font-display text-lg font-semibold text-ink">
+                Education
+              </h2>
+              <SectionStatus complete={data.education.length > 0} />
+            </div>
             <button
               type="button"
               onClick={() => update("education", [...data.education, { ...emptyEducation }])}
-              className="text-sm font-medium text-brand-600 hover:text-brand-700"
+              className="flex items-center gap-1 text-sm font-medium text-pass hover:text-pass-strong"
             >
-              + Add entry
+              <Plus className="h-3.5 w-3.5" />
+              Add entry
             </button>
           </div>
           <div className="space-y-4">
@@ -698,8 +889,10 @@ export default function ResumeEditor({
         </section>
 
         {/* Certifications */}
-        <section className="rounded-lg border border-gray-200 bg-white p-6">
-          <h2 className="mb-4 font-semibold text-gray-900">Certifications</h2>
+        <section className="rounded-lg border border-line bg-panel p-6">
+          <h2 className="mb-4 font-display text-lg font-semibold text-ink">
+            Certifications
+          </h2>
           <TagInput
             label="Certifications"
             values={data.certifications}

@@ -6,12 +6,19 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="min-h-screen">
-      <header className="flex items-center justify-between border-b border-gray-200 bg-white px-6 py-4">
-        <span className="text-lg font-semibold text-brand-700">
-          QA Resume Builder
-        </span>
-        <SignOutButton />
+    <div className="min-h-screen bg-paper">
+      <header className="border-b border-line bg-panel px-6 py-4">
+        <div className="mx-auto flex max-w-5xl items-center justify-between">
+          <div className="flex items-baseline gap-2">
+            <span className="font-display text-lg font-semibold text-ink">
+              QA Resume Builder
+            </span>
+            <span className="font-mono text-xs text-ink-faint">
+              v1.0
+            </span>
+          </div>
+          <SignOutButton />
+        </div>
       </header>
       <div className="mx-auto max-w-5xl px-6 py-8">{children}</div>
     </div>

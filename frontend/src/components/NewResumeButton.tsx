@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { Plus, Loader2 } from "lucide-react";
 
 export default function NewResumeButton() {
   const router = useRouter();
@@ -42,9 +43,14 @@ export default function NewResumeButton() {
     <button
       onClick={handleCreate}
       disabled={loading}
-      className="rounded-lg bg-brand-500 px-4 py-2 font-medium text-white shadow-sm transition hover:bg-brand-600 disabled:opacity-60"
+      className="flex items-center gap-2 rounded-md bg-pass px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-pass-strong disabled:opacity-60"
     >
-      {loading ? "Creating…" : "+ Create new resume"}
+      {loading ? (
+        <Loader2 className="h-4 w-4 animate-spin" />
+      ) : (
+        <Plus className="h-4 w-4" />
+      )}
+      New resume
     </button>
   );
 }

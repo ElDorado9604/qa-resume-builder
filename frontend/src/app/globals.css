@@ -8,5 +8,24 @@ body {
 }
 
 body {
-  @apply bg-gray-50 text-gray-900;
+  @apply bg-paper text-ink antialiased;
+}
+
+/* Subtle graph-paper texture used only behind the hero test-report card —
+   a single deliberate structural device, not applied everywhere. */
+.grid-texture {
+  background-image:
+    linear-gradient(to right, #E2E5EA 1px, transparent 1px),
+    linear-gradient(to bottom, #E2E5EA 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
 }
